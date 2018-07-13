@@ -361,7 +361,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_write(void)
 	for(;;)
 	{
 		wait(begin_page_write);
-		status_register_1[1] = SC_LOGIC_1;
+		status_register_1[0] = SC_LOGIC_1;
 
 		wait(clk_p->posedge_event() | cs_p->default_event());
 		if (cs_p->event())
@@ -431,7 +431,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
 	{
 		wait(begin_page_erase);
 
-		status_register_1[1] = SC_LOGIC_1;
+		status_register_1[0] = SC_LOGIC_1;
 		wait(clk_p->posedge_event() | cs_p->default_event());
 		if (cs_p->event())
 		{
@@ -736,8 +736,6 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 						}
 					}
 				}
-
-				wait(clk_p->posedge_event());
 
 				status_register_1[0] = SC_LOGIC_1;
 				status_register_1[1] = SC_LOGIC_0;
