@@ -456,21 +456,10 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
 			int row = address_int/256;
 			int col = address_int%256;
 
-			int cell = col;
-
-			while(true)
+			int cell = 0;
+			
+			while(cell<2048)
 			{
-				wait(clk_p->posedge_event() | cs_p->default_event());
-				if (cs_p->event())
-				{
-					break;
-				}
-
-				if(cell>=2048)
-				{
-					cell = 0;
-				}
-
 				data[row][cell] = false;
 				cell++;
 			}
