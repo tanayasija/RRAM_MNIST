@@ -24,7 +24,7 @@ SC_MODULE(RRAM_MNIST)
 	#define instruction_page_erase "0b011011011"
 	#define instruction_inference "0b000010100"
 	#define instruction_read_neuron_value "0b000010110"
-	#define instruction_read_class_register "0b000010100"
+	#define instruction_read_class_register "0b000010111"
 	#define instruction_read_status_register "0b000000101"
 
 	bool data[256][2048];
@@ -35,6 +35,7 @@ SC_MODULE(RRAM_MNIST)
 	dtype weight_dtype;
 	sc_lv<8> instruction;
 	sc_lv<16>  address;
+	sc_lv<precision> zero;
 	sc_lv<precision> read_value;
 	sc_lv<precision> write_value;
 	sc_lv<precision> weight;
@@ -70,6 +71,8 @@ SC_MODULE(RRAM_MNIST)
 	sc_signal<sc_lv<10*precision> > weight_lc;
  	sc_fifo<sc_lv<precision> > pixel_lc;
 
+	sc_trace_file* tracefile;
+
 	sc_lv<precision> pixel_high_impedance;
 	sc_lv<10*precision> weight_high_impedance;	
 
@@ -87,6 +90,16 @@ SC_MODULE(RRAM_MNIST)
 		time_page_erase(1,SC_MS),
 		time_weight_write(100,SC_NS)
 	{
+
+		tracefile = sc_create_vcd_trace_file("waveform");
+		sc_trace(tracefile,clk_p,"clk");
+		sc_trace(tracefile,cs_p,"CS");
+		sc_trace(tracefile,io_p,"IO");
+		sc_trace(tracefile,reset_lc,"reset");
+		sc_trace(tracefile,enable_lc,"enable");
+		sc_trace(tracefile,valid_lc,"valid");
+		sc_trace(tracefile,weight_lc,"weight");
+
 		cout << "Attaching ports of neuron block" << endl;
 		nerve.en_p(enable_lc);
 		nerve.reset_p(reset_lc);
@@ -103,6 +116,11 @@ SC_MODULE(RRAM_MNIST)
 			weight_high_impedance[i]=SC_LOGIC_Z;
 		}
 		weight_lc.write(weight_high_impedance);
+		for(int i=0;i<precision;i++)	
+		{
+			pixel_high_impedance[i] = SC_LOGIC_Z;
+			zero[i] = SC_LOGIC_0;
+		}
 
 		SC_THREAD(read_cs);
 			sensitive << cs_p.value_changed();
@@ -128,7 +146,15 @@ SC_MODULE(RRAM_MNIST)
 		SC_THREAD(inference);
 			sensitive << begin_inference;
 		SC_THREAD(add_update_neuron);
-		
+	
+
+		for (int i=0;i<256;i++)
+		{
+			for(int j=0;j<2048;j++)
+			{
+				data[i][j] = true;
+			}
+		}		
 	}
 
 	void read_cs(void);
@@ -151,19 +177,19 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_cs(void)
 	for(;;)
 	{
 		cs_val = cs_p->read();
-		cout << "CS read as " << cs_val << endl;
+		//cout << "CS read as " << cs_val << endl;
 		if (!cs_low & cs_val==false)
 		{
-			cout << "CS set low" << endl;
+			//cout << "CS set low" << endl;
 			cs_low= true;
 			begin_read_instruction.notify();
 		}
 		else if (cs_low & cs_val==true)
 		{
-			cout << "CS set high" << endl;
+			//cout << "CS set high" << endl;
 			cs_low=false;
 		}
-		cout << "Waiting for CS to change value" << endl;
+		//cout << "Waiting for CS to change value" << endl;
 		wait();
 	}
 }
@@ -173,7 +199,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 {
 	for (;;)
 	{
-		cout << "Reading instruction" << endl;
+		//cout << "Reading instruction" << endl;
 		wait(clk_p->posedge_event() | cs_p->default_event());
 		if (cs_p->event())
 		{
@@ -183,9 +209,9 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 		else
 		{
 			wait(SC_ZERO_TIME);
-			cout << "Reading instruction" << endl;
+			//cout << "Reading instruction" << endl;
 			instruction = io_p->read().range(7,0);
-			cout  << "Instruction read as " << instruction << endl;
+			//cout  << "Instruction read as " << instruction << endl;
 			if (instruction.to_string(SC_BIN)==instruction_read)
 			{	
 				if (status_register_1[0]==SC_LOGIC_0)
@@ -202,7 +228,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 				if (status_register_1[0]==SC_LOGIC_0)
 				{
 					begin_write_enable.notify();
-					cout << "Write enable instruction read" << endl;
+					//cout << "Write enable instruction read" << endl;
 				}
 				else
 				{
@@ -214,7 +240,6 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_instruction()
 				if (status_register_1[0]==SC_LOGIC_0 && status_register_1[1]==1)
 				{
 					begin_page_write.notify();
-					cout << "Write enable instruction read" << endl;
 				}
 				else
 				{
@@ -339,6 +364,8 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_read(void)
 					io_p->write(read_value);
 				}
 			}
+			wait(clk_p->posedge_event());
+			io_p->write(pixel_high_impedance);
 			cout << "CS set high, ending READ operation" << endl;
 		}
 	}
@@ -350,7 +377,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::write_enable(void)
 	for(;;)
 	{
 		wait(begin_write_enable);
-		cout << "Write enable bit written to 1" << endl;
+		//cout << "Write enable bit written to 1" << endl;
 		status_register_1[1] = SC_LOGIC_1;
 	}
 }
@@ -457,7 +484,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::page_erase(void)
 			int col = address_int%256;
 
 			int cell = 0;
-			
+
 			while(cell<2048)
 			{
 				data[row][cell] = false;
@@ -513,11 +540,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
 			cell++;
 		}
 
-		if ((i+1)%10==0)
+		if ((i+1)%10==0 || cell>=2048)
 		{
 			cout << "Moving to next row" << endl; 
 			cell = beg;
 			row++;
+			cout << "Row " << row << " col " << cell << endl; 
 		}
 		if (row>=256)
 		{
@@ -525,6 +553,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::weight_write(void)
 			row = 0;
 			beg += num_bit_pixel;
 			cell = beg;
+			cout << "Row " << row << " col " << cell << endl;
 		}
 	}
 	wait(time_weight_write);
@@ -546,7 +575,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_neuron_value(void)
 		int act = 0;
 		while (true)
 		{
-			wait(clk_p->posedge_event() | cs_p->default_event());
+			wait(clk_p->negedge_event() | cs_p->default_event());
 			if (cs_p->event())
 			{
 				break;
@@ -559,6 +588,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_neuron_value(void)
 				if (act>=10) act=0;
 			}
 		}
+		io_p->write(pixel_high_impedance);
 	}
 }
 
@@ -571,7 +601,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_class_register(void)
 
 		while (true)
 		{
-			wait(clk_p->posedge_event() | cs_p->default_event());
+			wait(clk_p->negedge_event() | cs_p->default_event());
 			if (cs_p->event())
 			{
 				break;
@@ -582,6 +612,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_class_register(void)
 				io_p->write(nerve.activation[10]);
 			}
 		}
+		io_p->write(pixel_high_impedance);
 	}
 }
 
@@ -607,6 +638,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::read_status_register(void)
 				io_p->write(val);
 			}
 		}
+		io_p->write(pixel_high_impedance);
 	}
 }
 
@@ -616,7 +648,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::inference(void)
 	for(;;)
 	{
 		wait(begin_inference);
-		cout << "Starting inference process, reading pixels" << endl;
+		//cout << "Starting inference process, reading pixels" << endl;
 		status_register_1[0] = SC_LOGIC_1;
 
 		begin_add_update_neuron.notify();
@@ -632,16 +664,14 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::inference(void)
 
 			wait(SC_ZERO_TIME);
 			pixel = io_p->read();
-			cout << "Read pixel " << pixels_read+1 << endl;
+			//cout << "Read pixel " << pixels_read+1 << endl;
 			pixel_lc.write(pixel);
-			cout << "Pixel " << pixels_read+1 << " written to fifo block" << endl;
+			//cout << "Pixel " << pixels_read+1 << " written to fifo block" << endl;
 
 			pixels_read++;
 		}
 
 		nerve.activation[10][4] = SC_LOGIC_0;
-		wait(clk_p->posedge_event());
-		pixel_lc.write(pixel_high_impedance);
 	}
 }
 
@@ -655,22 +685,22 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 		wait(clk_p->posedge_event() | cs_p->default_event());
 		if(!cs_p->event())
 		{
-			cout << "Writing neuron reset low at " << sc_time_stamp() << endl;
+			//cout << "Writing neuron reset low at " << sc_time_stamp() << endl;
 			reset_lc.write(false);
 		
 			wait(SC_ZERO_TIME);
-			cout  << "Waiting for neuron reset at " << sc_time_stamp() << endl;
+			//cout  << "Waiting for neuron reset at " << sc_time_stamp() << endl;
 			sc_logic reset_bit = (sc_logic) nerve.activation[10][6];
-			cout << "Reset bit read as " << reset_bit << " at time " << sc_time_stamp() << endl;
+			//cout << "Reset bit read as " << reset_bit << " at time " << sc_time_stamp() << endl;
 			while(reset_bit==SC_LOGIC_1) 
 			{
-				cout << "Waiting for neuron reset to complete" << endl;	
+				//cout << "Waiting for neuron reset to complete" << endl;	
 				wait(clk_p->posedge_event());
 				wait(SC_ZERO_TIME);
 				reset_bit = nerve.activation[10][6];
 			}
 				
-			cout << "Neuron reset complete at " << sc_time_stamp() << endl;
+			//cout << "Neuron reset complete at " << sc_time_stamp() << endl;
 			reset_lc.write(true);
 
 			int row = 0;
@@ -678,11 +708,12 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 			int beg = 0;
 			int num_pixel_bit = 10*precision;
 			bool flag = false;
-	
+			bool wrap = false;
+				
 			if(cs_low)
 			{
 				enable_lc.write(false);
-				cout << "Enable set low by controller at time " << sc_time_stamp() << endl;			
+				//cout << "Enable set low by controller at time " << sc_time_stamp() << endl;			
 		
 				for(int i=0;i<NUM_PIXELS;i++)
 				{
@@ -707,16 +738,25 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 						{
 							weight_page_buffer[num_pixel_bit-k-1] = (sc_logic)data[row][cell];
 							cell++;
+							if(cell>=2048)
+							{
+								wrap = true;
+								cell = beg;
+								row++;
+							}
 						}
 						
 						valid_lc.write(true);
 						weight_lc.write(weight_page_buffer);
-						cout << "Valid set high and wait written as " << weight_page_buffer << " at time " << sc_time_stamp() << endl;
+						//cout << "Valid set high and wait written as " << weight_page_buffer << " at time " << sc_time_stamp() << endl;
 						wait(clk_p->negedge_event());
 						valid_lc.write(false);
 						weight_lc.write(weight_page_buffer);
-						cell = beg;
-						row++;
+						if(wrap==false)
+						{
+							cell = beg;
+							row++;
+						}
 						if (row>=256)
 						{
 							row = 0;
@@ -726,7 +766,7 @@ void RRAM_MNIST<dtype,precision,NUM_PIXELS>::add_update_neuron(void)
 					}
 				}
 
-				status_register_1[0] = SC_LOGIC_1;
+				status_register_1[0] = SC_LOGIC_0;
 				status_register_1[1] = SC_LOGIC_0;
 				enable_lc.write(true);				
 				valid_lc.write(false);

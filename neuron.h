@@ -28,6 +28,13 @@ SC_MODULE(neuron)
 		sc_module(name),
 		time_neuron_reset(100,SC_NS)
 	{
+		for (int i=0;i<11;i++)
+		{
+			for(int j=0;j<precision;j++)
+			{
+				activation[i][j] = SC_LOGIC_0;
+			}
+		}
 		SC_THREAD(read_reset);
 		SC_THREAD(add_update);
 	}
@@ -42,10 +49,10 @@ void neuron<dtype,precision,NUM_PIXELS>::read_reset(void)
 	for(;;)
 	{
 		wait(reset_p->negedge_event());
-		cout << "Starting to reset at " << sc_time_stamp() << endl;
-		cout << "Reset bit set high at " << sc_time_stamp() << endl;
+		//cout << "Starting to reset at " << sc_time_stamp() << endl;
+		//cout << "Reset bit set high at " << sc_time_stamp() << endl;
 		activation[10][6] = SC_LOGIC_1;
-		cout << "Reset bit is " << activation[10][6] << " at time " <<  sc_time_stamp() << endl; 
+		//cout << "Reset bit is " << activation[10][6] << " at time " <<  sc_time_stamp() << endl; 
 		for(int i=0;i<10;i++)
 		{
 			sc_int<precision> zero_sc_int = 0;
@@ -56,7 +63,7 @@ void neuron<dtype,precision,NUM_PIXELS>::read_reset(void)
 		activation[10].range(3,0) = "0000";
 		wait(time_neuron_reset);
 		activation[10][6] = SC_LOGIC_0;
-		cout << "Reset complete at " << sc_time_stamp() << endl;
+		//cout << "Reset complete at " << sc_time_stamp() << endl;
 		wait(reset_p->posedge_event());
 	}
 }
@@ -68,30 +75,30 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 	{
 		wait(en_p->negedge_event());
 		
-		cout << "Starting the inference process in the neuron" << sc_time_stamp() << endl;
+		//cout << "Starting the inference process in the neuron " << sc_time_stamp() << endl;
 		activation[10][5] = SC_LOGIC_1;
 
 		for(int i=0;i<NUM_PIXELS;i++)
 		{
-			cout  << "Waiting for valid to go high in the neuron at time " << sc_time_stamp() << endl;
+			//cout  << "Waiting for valid to go high in the neuron at time " << sc_time_stamp() << endl;
 			wait(valid_p->posedge_event());
 			weight = weight_p->read();
-			cout  << "Weight read by neuron at time " << sc_time_stamp() << endl;
+			//cout  << "Weight read by neuron at time " << sc_time_stamp() << endl;
 			if (pixel_p->num_available())
 			{
 				pixel = pixel_p->read();
-				cout << "Pixel value read by neuron as " << pixel << " at time " << sc_time_stamp() << endl;  
+				//cout << "Pixel value read by neuron as " << pixel << " at time " << sc_time_stamp() << endl;  
 			}
 			else
 			{
 				wait(pixel_p->data_written_event() | en_p->default_event());
-				cout << "Waiting for pixel value to be written at time " << sc_time_stamp() << endl;
+				//cout << "Waiting for pixel value to be written at time " << sc_time_stamp() << endl;
 				if(en_p->event())
 				{
 					break;
 				}
 				pixel = pixel_p->read();
-				cout << "Pixel value read by neuron from fifo as " << pixel  <<  " at time " << sc_time_stamp() << endl;
+				//cout << "Pixel value read by neuron from fifo as " << pixel  <<  " at time " << sc_time_stamp() << endl;
 				
 			}
 			
@@ -99,8 +106,9 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 			long pixel_long = pixel_sc_int;
 			dtype *pixel_pointer = (dtype *)&pixel_long;
 			dtype pixel_dtype = *pixel_pointer;
-
+			//cout << "Pixel read as " << pixel_dtype << endl;
 			int num = 0;
+			
 			for(int j=10*precision-1;j>=precision-1;j-=precision)
 			{
 				sc_lv<precision> weight_j = weight(j,j-precision+1);
@@ -108,7 +116,9 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 				long weight_long = weight_sc_int;
 				dtype *weight_pointer = (dtype *)&weight_long;
 				dtype weight_dtype = *weight_pointer;
-
+				
+				//cout << "Weight read as " << weight_dtype << " for pixel " << i  <<endl;
+				
 				sc_lv<precision> activate = activation[num];
 				sc_int<precision> activate_sc_int = activate;
 				long activate_long = activate_sc_int;
@@ -140,7 +150,7 @@ void neuron<dtype,precision,NUM_PIXELS>::add_update(void)
 			long activate_long = activate_sc_int;
 			dtype *activate_pointer =(dtype *)&activate_long;
 			dtype activate_dtype = *activate_pointer;
-
+			//cout << "Activation of neuron " << i << " is " << activate_dtype << endl;
 			if(activate_dtype>max_val)
 			{
 				max_val = activate_dtype;
